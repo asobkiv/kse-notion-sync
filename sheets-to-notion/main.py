@@ -51,6 +51,14 @@ SYNCED_COLUMN      = os.environ.get("SHEETS_SYNCED_COLUMN") or "Notion Synced"
 DEDUP_PROPERTY     = os.environ.get("SHEETS_DEDUP_PROPERTY", "")  # "" = title prop
 CUSTOM_RULES       = os.environ.get("SHEETS_CUSTOM_RULES", "")    # "" = generic
 
+# Safety: when set (any non-empty value), the script only LOGS what it would
+# create — it creates nothing in Notion, so no classification credits are spent.
+DRY_RUN            = bool(os.environ.get("SHEETS_DRY_RUN"))
+
+# Safety: stop after creating this many pages in a single run (0 = unlimited).
+_max = os.environ.get("SHEETS_MAX_CREATES", "")
+MAX_CREATES        = int(_max) if _max.strip().isdigit() else 0
+
 NOTION_VERSION = "2022-06-28"
 
 # ── MAIN ──────────────────────────────────────────────────────
@@ -104,6 +112,11 @@ def main():
     # Project-specific precomputation (see CUSTOM RULES section)
     kse_dates = compute_kse_dates(data, headers) if CUSTOM_RULES == "kse_media" else None
 
+    unsynced = sum(1 for row in data if not safe_get(row, synced_idx))
+    log.info(f"{len(data)} data rows | {unsynced} without a '{SYNCED_COLUMN}' mark")
+    if DRY_RUN:
+        log.info("DRY RUN — nothing will be created in Notion, no credits spent")
+
     synced = skipped = errors = 0
 
     for offset, row in enumerate(data):
@@ -126,12 +139,24 @@ def main():
         if CUSTOM_RULES == "kse_media":
             apply_kse_media_rules(props, title_prop, schema, kse_dates[offset])
 
-        # Deduplicate
+        # Deduplicate against what already exists in Notion
         dval = dedup_value(props, dedup_prop)
         if dval and dval in existing:
-            update_cell(sheets, row_num, synced_idx + 1, "exists")
+            if not DRY_RUN:
+                update_cell(sheets, row_num, synced_idx + 1, "exists")
             skipped += 1
             continue
+
+        # Dry run: show exactly what WOULD be created, create nothing
+        if DRY_RUN:
+            log.info(f"  WOULD CREATE row {row_num}: dedup={dval!r}")
+            synced += 1
+            continue
+
+        # Safety cap: never flood Notion (and the classifier) in one run
+        if MAX_CREATES and synced >= MAX_CREATES:
+            log.info(f"Hit MAX_CREATES={MAX_CREATES} — stopping. Re-run to continue.")
+            break
 
         try:
             create_page(token, props)
@@ -144,7 +169,8 @@ def main():
             log.info(f"  Row {row_num} error: {e}")
             errors += 1
 
-    log.info(f"Finished. Synced {synced}, skipped {skipped}, errors {errors}.")
+    verb = "Would create" if DRY_RUN else "Created"
+    log.info(f"Finished. {verb} {synced}, skipped (exist) {skipped}, errors {errors}.")
 
 
 # ── NOTION VALUE FORMATTING (generic) ─────────────────────────
