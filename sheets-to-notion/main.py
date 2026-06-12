@@ -24,12 +24,10 @@ log = logging.getLogger(__name__)
 
 # ── CONFIGURE THESE ───────────────────────────────────────────
 
-# Name of the sheet tab (bottom tab name)
-SHEET_NAME = "Лист1"
-
 # Loaded from GitHub Secrets at runtime
 SPREADSHEET_ID     = os.environ.get("SHEETS_SPREADSHEET_ID", "")
 NOTION_DATABASE_ID = os.environ.get("SHEETS_DB_ID", "")
+SHEET_NAME         = os.environ.get("SHEETS_TAB_NAME", "Лист1")
 
 # ── INTERNALS ─────────────────────────────────────────────────
 

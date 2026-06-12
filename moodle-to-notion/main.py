@@ -30,15 +30,21 @@ log = logging.getLogger(__name__)
 
 # ── CONFIGURE THESE ───────────────────────────────────────────
 
-MOODLE_BASE_URL = "https://teaching.kse.org.ua"
-
 # Loaded from GitHub Secrets at runtime
 DRIVE_FOLDER_ID     = os.environ.get("MOODLE_DRIVE_FOLDER_ID", "")
 NOTION_DB_ID        = os.environ.get("NOTION_DB_ID", "")
 CRISIS_TOPICS_DB_ID = os.environ.get("CRISIS_TOPICS_DB_ID", "")
-NOTION_VERSION      = "2022-06-28"
-COURSE_ID_FILTER    = [3261, 3508, 3942, 2688, 3563]  # empty list = all enrolled
-EXT_SLIDES          = {"ppt", "pptx", "key", "odp"}
+MOODLE_BASE_URL     = os.environ.get("MOODLE_BASE_URL", "https://teaching.kse.org.ua")
+
+# Comma-separated course IDs via secret MOODLE_COURSE_IDS, e.g. "3261,3508,3942"
+# Leave the secret empty to sync all enrolled courses
+_course_ids_raw  = os.environ.get("MOODLE_COURSE_IDS", "")
+COURSE_ID_FILTER = [int(x.strip()) for x in _course_ids_raw.split(",") if x.strip()]
+
+# ── INTERNALS ─────────────────────────────────────────────────
+
+NOTION_VERSION = "2022-06-28"
+EXT_SLIDES     = {"ppt", "pptx", "key", "odp"}
 
 TEACHER_OVERRIDES = {
     # "3261": "https://www.notion.so/...",

@@ -26,3 +26,4 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           SHEETS_SPREADSHEET_ID:       ${{ secrets.SHEETS_SPREADSHEET_ID }}
           SHEETS_DB_ID:                ${{ secrets.SHEETS_DB_ID }}
+          SHEETS_TAB_NAME:             ${{ secrets.SHEETS_TAB_NAME }}

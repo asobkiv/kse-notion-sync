@@ -30,3 +30,5 @@ jobs:
           NOTION_DB_ID:                ${{ secrets.NOTION_DB_ID }}
           CRISIS_TOPICS_DB_ID:         ${{ secrets.CRISIS_TOPICS_DB_ID }}
           MOODLE_DRIVE_FOLDER_ID:      ${{ secrets.MOODLE_DRIVE_FOLDER_ID }}
+          MOODLE_BASE_URL:             ${{ secrets.MOODLE_BASE_URL }}
+          MOODLE_COURSE_IDS:           ${{ secrets.MOODLE_COURSE_IDS }}
