@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 SPREADSHEET_ID = "1ysF3g9lPtwGrL1-8HGRl-BV1F7Hl33Iznp5rHhA3mJI"
 
 # Name of the sheet tab (bottom tab name, usually "Sheet1" or "Аркуш1")
-SHEET_NAME = "Sheet1"
+SHEET_NAME = "Лист1"
 
 # Notion database for Ukrainian media mentions
 NOTION_DATABASE_ID = "342d1fbd7688805f80a7e70bf32f4762"
