@@ -2,7 +2,7 @@ name: Moodle → Notion sync
 
 on:
   schedule:
-    - cron: "0 7 * * *"   # щодня о 07:00 UTC (09:00 Kyiv)
+    - cron: "0 6 * * *"   # щодня о 06:00 UTC = 09:00 Kyiv (UTC+3)
   workflow_dispatch:       # дозволяє запустити вручну з GitHub UI
 
 jobs:
