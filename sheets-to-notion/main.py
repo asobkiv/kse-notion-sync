@@ -117,7 +117,7 @@ def main():
     if DRY_RUN:
         log.info("DRY RUN — nothing will be created in Notion, no credits spent")
 
-    synced = skipped = errors = 0
+    synced = skipped = errors = no_key = 0
 
     for offset, row in enumerate(data):
         row_num = offset + 2  # 1-based sheet row (row 1 = headers)
@@ -141,7 +141,15 @@ def main():
 
         # Deduplicate against what already exists in Notion
         dval = dedup_value(props, dedup_prop)
-        if dval and dval in existing:
+
+        # No dedup key (e.g. empty link) → skip. Such a row can't be deduplicated,
+        # so creating it would spawn a junk page that reappears on every run.
+        # Left unmarked: if a link is added later, it will sync then.
+        if not dval:
+            no_key += 1
+            continue
+
+        if dval in existing:
             if not DRY_RUN:
                 update_cell(sheets, row_num, synced_idx + 1, "exists")
             skipped += 1
@@ -170,7 +178,8 @@ def main():
             errors += 1
 
     verb = "Would create" if DRY_RUN else "Created"
-    log.info(f"Finished. {verb} {synced}, skipped (exist) {skipped}, errors {errors}.")
+    log.info(f"Finished. {verb} {synced}, skipped (exist) {skipped}, "
+             f"skipped (no '{dedup_prop}') {no_key}, errors {errors}.")
 
 
 # ── NOTION VALUE FORMATTING (generic) ─────────────────────────
