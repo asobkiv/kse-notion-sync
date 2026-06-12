@@ -1,0 +1,26 @@
+name: Rada TSK → Notion sync
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"   # щопонеділка о 08:00 UTC (10:00 Kyiv)
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r rada-tsk-to-notion/requirements.txt
+
+      - name: Run sync
+        run: python rada-tsk-to-notion/main.py
+        env:
+          NOTION_TOKEN:                ${{ secrets.RADA_NOTION_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
