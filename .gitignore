@@ -1,0 +1,18 @@
+# clasp — contains your Apps Script project ID (not a secret, but project-specific)
+# Uncomment if you don't want to share your script IDs publicly
+# .clasp.json
+
+# Local env files
+.env
+*.env.local
+
+# Temporary files
+.tmp/
+*.tmp
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Node (if ever adding local tooling)
+node_modules/
