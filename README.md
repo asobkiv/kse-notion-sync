@@ -135,6 +135,8 @@ The KSE media-mentions sheet has logic the generic engine can't infer (title gen
 | `SHEETS_SYNCED_COLUMN` | sheets | Tracking column name (default `Notion Synced`) |
 | `SHEETS_DEDUP_PROPERTY` | sheets | Dedup property (default: the title property) |
 | `SHEETS_CUSTOM_RULES` | sheets | Set to `kse_media` to enable KSE rules; else leave unset |
+| `SHEETS_DRY_RUN` | sheets | Set to `true` to preview without creating anything (no credits) |
+| `SHEETS_MAX_CREATES` | sheets | Cap pages created per run (e.g. `50`; unset = unlimited) |
 
 **How to find IDs:**
 - Notion database ID → open database → 32-char string in the URL
@@ -154,6 +156,19 @@ The KSE media-mentions sheet has logic the generic engine can't infer (title gen
 ## How deduplication works
 
 All three scripts load existing Notion entries before writing. An entry is skipped if it already exists (by name for Moodle/Rada, by the dedup property for Sheets). Safe to run repeatedly.
+
+For `sheets-to-notion`, a row whose **dedup property is empty** (e.g. a row with no link) is skipped entirely — it can't be deduplicated, so creating it would spawn a junk page that reappears on every run. It stays unmarked, so if you fill in the value later it syncs then.
+
+---
+
+## Safe testing & credit control (sheets)
+
+Creating Notion pages can trigger downstream automation (e.g. an AI classifier) that costs credits. Two controls prevent surprises:
+
+- **`SHEETS_DRY_RUN=true`** — the script logs exactly what it *would* create (`WOULD CREATE row N: dedup=...`) and creates nothing. Use this after any change to verify before going live. `Would create 0` means nothing new to sync.
+- **`SHEETS_MAX_CREATES=N`** — hard cap on pages created per run. Even if something is misconfigured, a run can't flood. Re-run to continue through a backlog in safe batches.
+
+Recommended first run on a new setup: set `SHEETS_DRY_RUN=true`, run, read the log, then remove it.
 
 ---
 
