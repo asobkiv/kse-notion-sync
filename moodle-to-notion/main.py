@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 DRIVE_FOLDER_ID     = os.environ.get("MOODLE_DRIVE_FOLDER_ID", "")
 NOTION_DB_ID        = os.environ.get("NOTION_DB_ID", "")
 CRISIS_TOPICS_DB_ID = os.environ.get("CRISIS_TOPICS_DB_ID", "")
-MOODLE_BASE_URL     = os.environ.get("MOODLE_BASE_URL", "https://teaching.kse.org.ua")
+MOODLE_BASE_URL     = os.environ.get("MOODLE_BASE_URL") or "https://teaching.kse.org.ua"
 
 # Comma-separated course IDs via secret MOODLE_COURSE_IDS, e.g. "3261,3508,3942"
 # Leave the secret empty to sync all enrolled courses

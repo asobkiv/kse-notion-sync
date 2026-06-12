@@ -46,8 +46,8 @@ log = logging.getLogger(__name__)
 
 SPREADSHEET_ID     = os.environ.get("SHEETS_SPREADSHEET_ID", "")
 NOTION_DATABASE_ID = os.environ.get("SHEETS_DB_ID", "")
-SHEET_NAME         = os.environ.get("SHEETS_TAB_NAME", "Sheet1")
-SYNCED_COLUMN      = os.environ.get("SHEETS_SYNCED_COLUMN", "Notion Synced")
+SHEET_NAME         = os.environ.get("SHEETS_TAB_NAME") or "Sheet1"
+SYNCED_COLUMN      = os.environ.get("SHEETS_SYNCED_COLUMN") or "Notion Synced"
 DEDUP_PROPERTY     = os.environ.get("SHEETS_DEDUP_PROPERTY", "")  # "" = title prop
 CUSTOM_RULES       = os.environ.get("SHEETS_CUSTOM_RULES", "")    # "" = generic
 
