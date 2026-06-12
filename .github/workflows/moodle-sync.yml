@@ -1,0 +1,29 @@
+name: Moodle → Notion sync
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # щодня о 07:00 UTC (09:00 Kyiv)
+  workflow_dispatch:       # дозволяє запустити вручну з GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r moodle-to-notion/requirements.txt
+
+      - name: Run sync
+        run: python moodle-to-notion/main.py
+        env:
+          NOTION_TOKEN:                ${{ secrets.MOODLE_NOTION_TOKEN }}
+          MOODLE_USERNAME:             ${{ secrets.MOODLE_USERNAME }}
+          MOODLE_PASSWORD:             ${{ secrets.MOODLE_PASSWORD }}
+          YOUTUBE_API_KEY:             ${{ secrets.YOUTUBE_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
