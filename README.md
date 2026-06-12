@@ -1,12 +1,14 @@
 # kse-notion-sync
 
-Automated pipelines that pull content from external sources into a Notion **⏱️ Artifacts** database. Run on GitHub Actions — no servers, no manual work.
+Automated pipelines that pull content from external sources into a Notion database. Run on GitHub Actions — no servers, no manual work.
 
 | Workflow | Source | Schedule | Creates in Notion |
 |---|---|---|---|
 | `moodle-to-notion` | Moodle LMS | daily 09:00 Kyiv | Teaching evidence — slides, docs, YouTube recordings |
 | `rada-tsk-to-notion` | Rada TSK stenographic records | every Monday 10:00 Kyiv | Documents linked to a Crisis Topic |
-| `sheets-to-notion` | Google Sheets | daily 08:00 Kyiv | Media mention pages |
+| `sheets-to-notion` | Google Sheets | daily 08:00 Kyiv | One Notion page per row (schema-driven) |
+
+The three scripts are independent — fork all of them or just the one you need.
 
 ---
 
@@ -19,30 +21,93 @@ GitHub → **Fork** → create under your account or organization.
 ### 2. Create a Google Cloud project
 
 1. [console.cloud.google.com](https://console.cloud.google.com) → New project
-2. **APIs & Services → Library** → enable:
-   - **Google Drive API**
-   - **Google Sheets API**
-   - **YouTube Data API v3**
-3. **IAM → Service Accounts → Create** → name it anything → **Keys → Add Key → JSON** → save the file
-4. Copy the full JSON content — you'll need it as `GOOGLE_SERVICE_ACCOUNT_JSON` secret
+2. **APIs & Services → Library** → enable the APIs you need:
+   - **Google Drive API** (moodle, rada)
+   - **Google Sheets API** (sheets)
+   - **YouTube Data API v3** (moodle, optional — for video duration)
+3. **IAM → Service Accounts → Create** → **Keys → Add Key → JSON** → save the file
+4. The JSON content goes into the `GOOGLE_SERVICE_ACCOUNT_JSON` secret
+5. Share each Drive folder / Sheet with the service account email (`...@....iam.gserviceaccount.com`) as **Editor**
 
 ### 3. Create a Notion integration
 
-1. [notion.so/my-integrations](https://www.notion.so/my-integrations) → New integration
-2. Copy the **Internal Integration Secret** — you'll need it as a Notion token secret
-3. Open each Notion database → **...** → **Connections** → add your integration
+1. [notion.so/my-integrations](https://www.notion.so/my-integrations) → New integration → copy the secret
+2. Open each Notion database → **...** → **Connections** → add your integration
+3. Create the database properties as described in the **Notion schema** section below
 
 ### 4. Add GitHub Secrets
 
-Repo → **Settings → Secrets and variables → Actions → New repository secret**
-
-Add all secrets from the table below.
+Repo → **Settings → Secrets and variables → Actions** → add the secrets from the [reference table](#secrets-reference).
 
 ### 5. Run manually to test
 
-**Actions → pick a workflow → Run workflow**
+**Actions → pick a workflow → Run workflow** → check the logs.
 
-Check the logs — if everything is green, the scheduled runs will take care of the rest.
+---
+
+## Notion database schema
+
+Each scraper writes a fixed set of properties. **Create a Notion database with these property names and types.** If a property is missing in your database, the script simply skips it (no error), so you can start minimal and add more later.
+
+> ⚠️ `status`-type properties are special: Notion does **not** let the API create new status options. So for any `status` property, manually add the option values the script uses (e.g. `Queued`) before the first run. `select` / `multi_select` options are created automatically.
+
+### moodle-to-notion
+
+| Property | Type | Notes |
+|---|---|---|
+| `Name` | Title | **required** — the resource name |
+| `Source URL` | URL | Drive link (or Moodle/YouTube link) |
+| `Evidence format` | Select | `Document` / `Slides` / `Video` / `Other` |
+| `Artifact Type` | Select | always `Teaching evidence` |
+| `Course` | Multi-select | mapped course name |
+| `Classification status` | Status | set to `Queued` — **add this option manually** |
+| `Teaching hours` | Number | only for YouTube videos |
+| `Relation` | Relation | → your "teachers" database (optional) |
+
+### rada-tsk-to-notion
+
+| Property | Type | Notes |
+|---|---|---|
+| `Name` | Title | **required** — the document name |
+| `Source URL` | URL | Drive link (or Rada link) |
+| `Artifact Type` | Select | always `Document` |
+| `Evidence format` | Select | always `Document` |
+| `Classification status` | Status | set to `Queued` — **add this option manually** |
+| `Tags` | Multi-select | `Evidence`, `Timeline` |
+| `Relation` | Relation | → the topic page set via `HONCHARENKO_PAGE_ID` (optional) |
+| `Date` | Date | parsed from the document name |
+
+### sheets-to-notion
+
+This one is **schema-driven** — it adapts to whatever database you point it at. See the next section.
+
+---
+
+## How `sheets-to-notion` maps columns
+
+The script reads your Notion database schema, then for each **sheet column** it looks for a **Notion property with the same name** (case-insensitive). If found, the cell value is written there, formatted automatically based on the property's type:
+
+| Notion property type | Expected sheet cell |
+|---|---|
+| Title / Text | any text |
+| URL / Email / Phone | the raw value |
+| Number | `123` or `12,5` |
+| Checkbox | `true` / `1` / `yes` / `так` / `x` |
+| Select / Status | the option name (Select auto-creates; Status must pre-exist) |
+| Multi-select | comma-separated, e.g. `Evidence, Timeline` |
+| Date | `2026-05-15` or `15.05.2026` |
+
+**Rules:**
+- Name your sheet columns exactly like your Notion properties → they map automatically.
+- Columns with no matching property are ignored.
+- Duplicates are detected via the title property (override with `SHEETS_DEDUP_PROPERTY`).
+- A `Notion Synced` column is added to the sheet to track progress; synced rows are skipped on re-runs.
+
+**Recommendation for a clean setup:** create a Notion database where the property names match your sheet headers 1:1. Make one of them the Title, and pick a column with unique values for dedup.
+
+### Project-specific rules (advanced)
+
+The KSE media-mentions sheet has logic the generic engine can't infer (title generated from a link, a carry-forward date written to a custom-named property, and a status remap). That logic lives in one clearly-marked block in `sheets-to-notion/main.py`, activated only when `SHEETS_CUSTOM_RULES=kse_media`. Generic forks leave that secret unset and the block never runs. Use it as a template if you need your own custom rules.
 
 ---
 
@@ -50,68 +115,48 @@ Check the logs — if everything is green, the scheduled runs will take care of 
 
 | Secret | Required by | Description |
 |---|---|---|
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | all | Google service account JSON (Drive + Sheets access) |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | all | Google service account JSON |
 | `MOODLE_NOTION_TOKEN` | moodle | Notion integration secret |
 | `MOODLE_USERNAME` | moodle | Moodle login email |
 | `MOODLE_PASSWORD` | moodle | Moodle password |
-| `YOUTUBE_API_KEY` | moodle | YouTube Data API v3 key |
+| `YOUTUBE_API_KEY` | moodle | YouTube Data API v3 key (optional) |
 | `NOTION_DB_ID` | moodle, rada | Notion artifacts database ID |
-| `CRISIS_TOPICS_DB_ID` | moodle | Notion Crisis Topics database ID |
-| `MOODLE_DRIVE_FOLDER_ID` | moodle | Drive folder ID for uploaded Moodle files |
-| `MOODLE_BASE_URL` | moodle | Moodle URL, e.g. `https://teaching.kse.org.ua` |
-| `MOODLE_COURSE_IDS` | moodle | Comma-separated course IDs, e.g. `3261,3508` (empty = all) |
+| `CRISIS_TOPICS_DB_ID` | moodle | Teachers database ID (optional) |
+| `MOODLE_DRIVE_FOLDER_ID` | moodle | Drive folder for uploaded files |
+| `MOODLE_BASE_URL` | moodle | e.g. `https://teaching.kse.org.ua` |
+| `MOODLE_COURSE_IDS` | moodle | Comma-separated, e.g. `3261,3508` (empty = all) |
 | `RADA_NOTION_TOKEN` | rada | Notion integration secret |
-| `HONCHARENKO_PAGE_ID` | rada | Notion page ID of the Crisis Topic to link documents to |
-| `RADA_DRIVE_FOLDER_ID` | rada | Drive folder ID for downloaded Rada PDFs |
+| `HONCHARENKO_PAGE_ID` | rada | Topic page to link documents to (optional) |
+| `RADA_DRIVE_FOLDER_ID` | rada | Drive folder for downloaded PDFs |
 | `SHEETS_NOTION_TOKEN` | sheets | Notion integration secret |
-| `SHEETS_SPREADSHEET_ID` | sheets | Google Sheets spreadsheet ID (from URL) |
-| `SHEETS_DB_ID` | sheets | Notion database ID for media mentions |
-| `SHEETS_TAB_NAME` | sheets | Sheet tab name, e.g. `Лист1` or `Sheet1` |
+| `SHEETS_SPREADSHEET_ID` | sheets | Spreadsheet ID (from URL) |
+| `SHEETS_DB_ID` | sheets | Notion database ID |
+| `SHEETS_TAB_NAME` | sheets | Sheet tab name (default `Sheet1`) |
+| `SHEETS_SYNCED_COLUMN` | sheets | Tracking column name (default `Notion Synced`) |
+| `SHEETS_DEDUP_PROPERTY` | sheets | Dedup property (default: the title property) |
+| `SHEETS_CUSTOM_RULES` | sheets | Set to `kse_media` to enable KSE rules; else leave unset |
 
 **How to find IDs:**
-- Notion database ID → open database → copy from URL (32-char string after the last `/`)
-- Drive folder ID → open folder → copy from URL (`/folders/THIS_PART`)
-- Spreadsheet ID → open sheet → copy from URL (`/spreadsheets/d/THIS_PART/edit`)
+- Notion database ID → open database → 32-char string in the URL
+- Drive folder ID → open folder → URL part after `/folders/`
+- Spreadsheet ID → URL part after `/spreadsheets/d/`
 
 ---
 
 ## Customization
 
-### Adding Moodle courses
-
-Add course IDs to the `MOODLE_COURSE_IDS` secret (comma-separated). Find the ID in the Moodle course URL: `.../course/view.php?id=XXXX`.
-
-Update `COURSE_MAP` in `moodle-to-notion/main.py` if the course name isn't mapped yet.
-
-### Teacher name overrides
-
-If a teacher's English name on Moodle doesn't transliterate correctly to Ukrainian, add an entry to `TEACHER_NAME_MAP` in `moodle-to-notion/main.py`:
-
-```python
-TEACHER_NAME_MAP = {
-    "sobolev":  "соболєв",
-    "yourname": "вашеімʼя",
-}
-```
-
-### Changing Rada crawl target
-
-Edit `RADA_INDEX_URL` and the regex in `fetch_sub_page_links()` in `rada-tsk-to-notion/main.py`.
-
----
-
-## Running manually
-
-Actions → pick a workflow → **Run workflow**
+- **Moodle courses** → set the `MOODLE_COURSE_IDS` secret; update `COURSE_MAP` in `moodle-to-notion/main.py` for the course-name → Notion-option mapping.
+- **Teacher name overrides** → `TEACHER_NAME_MAP` in `moodle-to-notion/main.py` (for names that don't transliterate cleanly).
+- **Rada crawl target** → `RADA_INDEX_URL` and the regex in `fetch_sub_page_links()`.
 
 ---
 
 ## How deduplication works
 
-All three scripts load existing Notion entries before writing anything. An entry is skipped if its name (Moodle/Rada) or URL (Sheets) already exists in the database. Safe to run multiple times.
+All three scripts load existing Notion entries before writing. An entry is skipped if it already exists (by name for Moodle/Rada, by the dedup property for Sheets). Safe to run repeatedly.
 
 ---
 
 ## Security
 
-No credentials or IDs in the code — everything is in GitHub Secrets (encrypted, never visible in logs). The `.gs` files are the original Google Apps Script versions kept as reference.
+No credentials or IDs in the code — everything lives in GitHub Secrets (encrypted, masked in logs). The `.gs` files are the original Google Apps Script versions, kept as reference.

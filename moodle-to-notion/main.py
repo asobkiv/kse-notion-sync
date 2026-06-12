@@ -102,6 +102,10 @@ def main():
     existing = fetch_existing_names(notion_token)
     log.info(f"{len(existing)} existing entries in Notion")
 
+    # Read the target DB schema so we only send properties that actually exist —
+    # lets others reuse this script with a differently-structured Notion table.
+    schema = fetch_notion_schema(notion_token)
+
     created = skipped = errors = 0
 
     for course in courses:
@@ -131,7 +135,7 @@ def main():
                     if drive_url:
                         res["source_url"] = drive_url
 
-                create_notion_page(notion_token, res)
+                create_notion_page(notion_token, res, schema)
                 existing.add(res["name"])
                 created += 1
                 time.sleep(0.35)
@@ -537,7 +541,7 @@ def fetch_existing_names(token):
     return names
 
 
-def create_notion_page(token, res):
+def create_notion_page(token, res, schema):
     properties = {
         "Name":                  {"title": [{"text": {"content": res["name"][:2000]}}]},
         "Source URL":            {"url": res["source_url"]},
@@ -553,6 +557,9 @@ def create_notion_page(token, res):
     if res.get("teacher_page_id"):
         properties["Relation"] = {"relation": [{"id": res["teacher_page_id"]}]}
 
+    # Keep only properties that exist in the target database (skip the rest)
+    properties = {k: v for k, v in properties.items() if k in schema}
+
     body = {"parent": {"database_id": NOTION_DB_ID}, "properties": properties}
 
     if not res.get("teacher_page_id") and res.get("teacher_name"):
@@ -567,6 +574,17 @@ def create_notion_page(token, res):
     resp = requests.post("https://api.notion.com/v1/pages", headers=notion_headers(token), json=body, timeout=30)
     if resp.status_code != 200:
         raise RuntimeError(f"Notion create page → HTTP {resp.status_code}: {resp.text[:300]}")
+
+
+def fetch_notion_schema(token):
+    resp = requests.get(
+        f"https://api.notion.com/v1/databases/{NOTION_DB_ID}",
+        headers=notion_headers(token),
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Could not read Notion schema → HTTP {resp.status_code}: {resp.text[:300]}")
+    return {name: meta["type"] for name, meta in resp.json()["properties"].items()}
 
 
 def notion_headers(token):

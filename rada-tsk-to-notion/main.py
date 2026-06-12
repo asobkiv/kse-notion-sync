@@ -57,6 +57,10 @@ def main():
     existing = fetch_existing_names(notion_token)
     log.info(f"{len(existing)} existing entries in Notion")
 
+    # Read the target DB schema so we only send properties that actually exist —
+    # lets others reuse this script with a differently-structured Notion table.
+    schema = fetch_notion_schema(notion_token)
+
     created = skipped = errors = 0
 
     for page_url in sub_pages:
@@ -82,7 +86,7 @@ def main():
                     if drive_url:
                         source_url = drive_url
 
-                create_notion_document(notion_token, f, source_url)
+                create_notion_document(notion_token, f, source_url, schema)
                 existing.add(f["name"])
                 created += 1
                 time.sleep(0.35)
@@ -253,7 +257,7 @@ def fetch_existing_names(token):
     return names
 
 
-def create_notion_document(token, f, source_url):
+def create_notion_document(token, f, source_url, schema):
     properties = {
         "Name":                  {"title": [{"text": {"content": f["name"][:2000]}}]},
         "Source URL":            {"url": source_url},
@@ -261,11 +265,17 @@ def create_notion_document(token, f, source_url):
         "Evidence format":       {"select": {"name": "Document"}},
         "Classification status": {"status": {"name": "Queued"}},
         "Tags":                  {"multi_select": [{"name": "Evidence"}, {"name": "Timeline"}]},
-        "Relation":              {"relation": [{"id": HONCHARENKO_PAGE_ID}]},
     }
+
+    # Relation only if a target page is configured
+    if HONCHARENKO_PAGE_ID:
+        properties["Relation"] = {"relation": [{"id": HONCHARENKO_PAGE_ID}]}
 
     if f.get("date"):
         properties["Date"] = {"date": {"start": f["date"]}}
+
+    # Keep only properties that exist in the target database (skip the rest)
+    properties = {k: v for k, v in properties.items() if k in schema}
 
     resp = requests.post(
         "https://api.notion.com/v1/pages",
@@ -275,6 +285,17 @@ def create_notion_document(token, f, source_url):
     )
     if resp.status_code != 200:
         raise RuntimeError(f"Notion create → HTTP {resp.status_code}: {resp.text[:300]}")
+
+
+def fetch_notion_schema(token):
+    resp = requests.get(
+        f"https://api.notion.com/v1/databases/{NOTION_DB_ID}",
+        headers=notion_headers(token),
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Could not read Notion schema → HTTP {resp.status_code}: {resp.text[:300]}")
+    return {name: meta["type"] for name, meta in resp.json()["properties"].items()}
 
 
 def notion_headers(token):

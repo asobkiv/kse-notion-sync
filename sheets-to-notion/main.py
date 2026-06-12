@@ -1,12 +1,32 @@
 """
-Google Sheets → Notion: Ukrainian Media Mentions Sync
+Google Sheets → Notion: generic, schema-driven sync.
 Runs via GitHub Actions on a daily schedule.
 
-Required env vars (set as GitHub Secrets):
+HOW IT WORKS
+  1. Reads your Notion database schema (property names + types) via the API.
+  2. Reads your Google Sheet (header row + data rows).
+  3. Maps each sheet column to the Notion property with the SAME NAME
+     (case-insensitive). The value is formatted automatically according to
+     the Notion property's type (date / url / select / number / text / ...).
+  4. Creates one Notion page per new row. Tracks progress in a "Notion Synced"
+     column written back to the sheet, so re-runs skip already-synced rows.
+
+  => To map a sheet column into Notion, just name it exactly like the Notion
+     property. Columns without a matching property are ignored.
+
+Required env vars (GitHub Secrets):
   NOTION_TOKEN                 — Notion integration secret
-  GOOGLE_SERVICE_ACCOUNT_JSON  — Google service account JSON (for Sheets read/write)
+  GOOGLE_SERVICE_ACCOUNT_JSON  — Google service account JSON (Sheets read/write)
   SHEETS_SPREADSHEET_ID        — Google Sheets spreadsheet ID
-  SHEETS_DB_ID                 — Notion database ID for media mentions
+  SHEETS_DB_ID                 — Notion database ID
+
+Optional env vars:
+  SHEETS_TAB_NAME      — sheet tab name (default "Sheet1")
+  SHEETS_SYNCED_COLUMN — tracking column name (default "Notion Synced")
+  SHEETS_DEDUP_PROPERTY — Notion property used to detect duplicates
+                          (default: the database's title property)
+  SHEETS_CUSTOM_RULES  — enables a project-specific rules block; leave unset
+                          for generic behavior (see CUSTOM RULES section below)
 """
 
 import json
@@ -22,87 +42,202 @@ from googleapiclient.discovery import build
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
-# ── CONFIGURE THESE ───────────────────────────────────────────
+# ── CONFIGURE (via GitHub Secrets) ────────────────────────────
 
-# Loaded from GitHub Secrets at runtime
 SPREADSHEET_ID     = os.environ.get("SHEETS_SPREADSHEET_ID", "")
 NOTION_DATABASE_ID = os.environ.get("SHEETS_DB_ID", "")
-SHEET_NAME         = os.environ.get("SHEETS_TAB_NAME", "Лист1")
-
-# ── INTERNALS ─────────────────────────────────────────────────
+SHEET_NAME         = os.environ.get("SHEETS_TAB_NAME", "Sheet1")
+SYNCED_COLUMN      = os.environ.get("SHEETS_SYNCED_COLUMN", "Notion Synced")
+DEDUP_PROPERTY     = os.environ.get("SHEETS_DEDUP_PROPERTY", "")  # "" = title prop
+CUSTOM_RULES       = os.environ.get("SHEETS_CUSTOM_RULES", "")    # "" = generic
 
 NOTION_VERSION = "2022-06-28"
 
 # ── MAIN ──────────────────────────────────────────────────────
 
 def main():
-    notion_token = os.environ["NOTION_TOKEN"]
-    sa_json      = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
+    token   = os.environ["NOTION_TOKEN"]
+    sa_json = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
 
     if not SPREADSHEET_ID:
-        raise RuntimeError("Set SPREADSHEET_ID in the script config")
+        raise RuntimeError("Set SHEETS_SPREADSHEET_ID")
+    if not NOTION_DATABASE_ID:
+        raise RuntimeError("Set SHEETS_DB_ID")
 
     sheets = build_sheets_service(sa_json)
+
+    schema     = fetch_notion_schema(token)
+    title_prop = next((n for n, t in schema.items() if t == "title"), None)
+    if not title_prop:
+        raise RuntimeError("Notion database has no title property")
 
     data, headers = read_sheet(sheets)
     if not data:
         log.info("Sheet is empty")
         return
 
-    idx = {
-        "date":   headers.index("Дата")          if "Дата"          in headers else -1,
-        "status": headers.index("Статус")        if "Статус"        in headers else -1,
-        "screen": headers.index("Скрін")         if "Скрін"         in headers else -1,
-        "link":   headers.index("Лінк")          if "Лінк"          in headers else -1,
-        "synced": headers.index("Notion Synced") if "Notion Synced" in headers else -1,
-    }
+    # Map sheet columns → Notion properties by matching name (case-insensitive)
+    name_to_prop = {n.lower(): n for n in schema}
+    col_map    = {}   # sheet column index → (notion property name, notion type)
+    synced_idx = None
+    for i, h in enumerate(headers):
+        hn = str(h).strip()
+        if hn.lower() == SYNCED_COLUMN.lower():
+            synced_idx = i
+            continue
+        prop = name_to_prop.get(hn.lower())
+        if prop:
+            col_map[i] = (prop, schema[prop])
 
-    # Add "Notion Synced" column if missing
-    if idx["synced"] == -1:
-        idx["synced"] = len(headers)
-        update_cell(sheets, 1, idx["synced"] + 1, "Notion Synced")
+    log.info("Mapped columns → Notion: " +
+             (", ".join(f"{headers[i]}→{p}" for i, (p, _) in col_map.items()) or "(none)"))
 
-    log.info("Loading existing Notion links...")
-    existing_links = fetch_all_notion_links(notion_token)
-    log.info(f"Loaded {len(existing_links)} existing links from Notion")
+    # Add a tracking column if the sheet doesn't have one yet
+    if synced_idx is None:
+        synced_idx = len(headers)
+        update_cell(sheets, 1, synced_idx + 1, SYNCED_COLUMN)
 
-    last_known_date = None
+    dedup_prop = DEDUP_PROPERTY or title_prop
+    existing   = fetch_existing_values(token, dedup_prop)
+    log.info(f"Loaded {len(existing)} existing '{dedup_prop}' values from Notion")
+
+    # Project-specific precomputation (see CUSTOM RULES section)
+    kse_dates = compute_kse_dates(data, headers) if CUSTOM_RULES == "kse_media" else None
+
     synced = skipped = errors = 0
 
-    for row_idx, row in enumerate(data, start=2):  # row_idx = 1-based sheet row
-        # Carry date forward
-        raw_date = safe_get(row, idx["date"])
-        parsed   = parse_date(raw_date)
-        if parsed:
-            last_known_date = parsed
+    for offset, row in enumerate(data):
+        row_num = offset + 2  # 1-based sheet row (row 1 = headers)
 
-        synced_val = safe_get(row, idx["synced"])
-        if synced_val:
+        if safe_get(row, synced_idx):
             continue
 
-        link = safe_get(row, idx["link"]).strip()
-        if not link:
-            continue
+        # Build Notion properties from mapped columns
+        props = {}
+        for cidx, (pname, ptype) in col_map.items():
+            val = safe_get(row, cidx).strip()
+            if not val:
+                continue
+            formatted = format_value(ptype, val)
+            if formatted is not None:
+                props[pname] = formatted
 
-        title  = extract_title(link)
-        status = safe_get(row, idx["status"]).strip()
-        screen = safe_get(row, idx["screen"]).strip()
+        # Apply project-specific rules (no-op unless SHEETS_CUSTOM_RULES set)
+        if CUSTOM_RULES == "kse_media":
+            apply_kse_media_rules(props, title_prop, schema, kse_dates[offset])
+
+        # Deduplicate
+        dval = dedup_value(props, dedup_prop)
+        if dval and dval in existing:
+            update_cell(sheets, row_num, synced_idx + 1, "exists")
+            skipped += 1
+            continue
 
         try:
-            if link in existing_links:
-                update_cell(sheets, row_idx, idx["synced"] + 1, "exists")
-                skipped += 1
-            else:
-                create_notion_page(notion_token, title, link, screen, last_known_date, status)
-                update_cell(sheets, row_idx, idx["synced"] + 1, time.strftime("%Y-%m-%dT%H:%M:%SZ"))
-                existing_links.add(link)
-                synced += 1
-                time.sleep(0.35)
+            create_page(token, props)
+            update_cell(sheets, row_num, synced_idx + 1, time.strftime("%Y-%m-%dT%H:%M:%SZ"))
+            if dval:
+                existing.add(dval)
+            synced += 1
+            time.sleep(0.35)
         except Exception as e:
-            log.info(f"  Row {row_idx} error: {e}")
+            log.info(f"  Row {row_num} error: {e}")
             errors += 1
 
     log.info(f"Finished. Synced {synced}, skipped {skipped}, errors {errors}.")
+
+
+# ── NOTION VALUE FORMATTING (generic) ─────────────────────────
+
+def format_value(ptype, val):
+    """Format a plain string into a Notion property payload for the given type.
+    Returns None for empty/unsupported values."""
+    if ptype == "title":
+        return {"title": [{"text": {"content": val[:2000]}}]}
+    if ptype == "rich_text":
+        return {"rich_text": [{"text": {"content": val[:2000]}}]}
+    if ptype == "url":
+        return {"url": val}
+    if ptype == "email":
+        return {"email": val}
+    if ptype == "phone_number":
+        return {"phone_number": val}
+    if ptype == "number":
+        try:
+            return {"number": float(val.replace(",", "."))}
+        except ValueError:
+            return None
+    if ptype == "checkbox":
+        return {"checkbox": val.strip().lower() in ("true", "1", "yes", "так", "x", "✓")}
+    if ptype == "select":
+        return {"select": {"name": val[:100]}}
+    if ptype == "status":
+        return {"status": {"name": val[:100]}}
+    if ptype == "multi_select":
+        parts = [p.strip()[:100] for p in val.split(",") if p.strip()]
+        return {"multi_select": [{"name": p} for p in parts]} if parts else None
+    if ptype == "date":
+        d = parse_date(val)
+        return {"date": {"start": d}} if d else None
+    return None  # people / relation / files / formula / rollup → not auto-mapped
+
+
+def dedup_value(props, dedup_prop):
+    """Extract a comparable plain value from a built property payload."""
+    pv = props.get(dedup_prop)
+    if not pv:
+        return None
+    if "url" in pv:        return pv["url"]
+    if "email" in pv:      return pv["email"]
+    if "title" in pv:      return "".join(x["text"]["content"] for x in pv["title"]) or None
+    if "rich_text" in pv:  return "".join(x["text"]["content"] for x in pv["rich_text"]) or None
+    if "select" in pv:     return (pv["select"] or {}).get("name")
+    if "status" in pv:     return (pv["status"] or {}).get("name")
+    if "number" in pv:     return str(pv["number"])
+    return None
+
+
+# ── CUSTOM RULES (project-specific, opt-in) ───────────────────
+# Everything below activates ONLY when SHEETS_CUSTOM_RULES="kse_media".
+# Generic forks leave that secret unset and ignore this block entirely.
+#
+# KSE media-mentions sheet needs three things the generic engine can't infer:
+#   1. Title (the "What" property) generated from the link's domain/path,
+#      because the sheet has no dedicated title column.
+#   2. A date that "carries forward": dates appear only on the first row of
+#      each day's group, and blank rows below inherit the last seen date.
+#      It is written to a custom-named property "Дата_YYYY_MM_DD_inferred".
+#   3. "Classification status" = Approved when Статус is "Чисто", else Queued.
+
+def compute_kse_dates(data, headers):
+    date_idx = next((i for i, h in enumerate(headers) if str(h).strip().lower() == "дата"), None)
+    dates, last = [], None
+    for row in data:
+        p = parse_date(safe_get(row, date_idx)) if date_idx is not None else None
+        if p:
+            last = p
+        dates.append(last)
+    return dates
+
+
+def apply_kse_media_rules(props, title_prop, schema, row_date):
+    # 1. Title from the Лінк url
+    link = (props.get("Лінк") or {}).get("url")
+    if title_prop not in props and link:
+        props[title_prop] = {"title": [{"text": {"content": extract_title(link)}}]}
+
+    # 2. Inferred (carry-forward) date → custom-named property
+    if row_date and "Дата_YYYY_MM_DD_inferred" in schema:
+        props["Дата_YYYY_MM_DD_inferred"] = {"date": {"start": row_date}}
+
+    # 3. Classification status from Статус; ignore Статус values outside the set
+    status = (props.get("Статус") or {}).get("select", {}).get("name")
+    if status not in ("Подія", "Чисто"):
+        props.pop("Статус", None)
+    if "Classification status" in schema:
+        props["Classification status"] = {
+            "status": {"name": "Approved" if status == "Чисто" else "Queued"}
+        }
 
 
 # ── GOOGLE SHEETS ─────────────────────────────────────────────
@@ -121,21 +256,17 @@ def read_sheet(sheets):
         spreadsheetId=SPREADSHEET_ID,
         range=SHEET_NAME,
     ).execute()
-
     values = result.get("values", [])
     if not values:
         return [], []
-
     headers = [str(h).strip() for h in values[0]]
-    data    = values[1:]
-    return data, headers
+    return values[1:], headers
 
 
 def update_cell(sheets, row, col, value):
-    col_letter = col_to_letter(col)
     sheets.spreadsheets().values().update(
         spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME}!{col_letter}{row}",
+        range=f"{SHEET_NAME}!{col_to_letter(col)}{row}",
         valueInputOption="RAW",
         body={"values": [[value]]},
     ).execute()
@@ -144,50 +275,37 @@ def update_cell(sheets, row, col, value):
 def col_to_letter(col):
     result = ""
     while col > 0:
-        col, remainder = divmod(col - 1, 26)
-        result = chr(65 + remainder) + result
+        col, rem = divmod(col - 1, 26)
+        result = chr(65 + rem) + result
     return result
 
 
 def safe_get(row, idx):
-    if idx < 0 or idx >= len(row):
+    if idx is None or idx < 0 or idx >= len(row):
         return ""
     return str(row[idx])
 
 
-# ── NOTION ────────────────────────────────────────────────────
+# ── NOTION API ────────────────────────────────────────────────
 
-def create_notion_page(token, title, link, screen, iso_date, status):
-    classification = "Approved" if status == "Чисто" else "Queued"
-    props = {
-        "What":                  {"title": [{"text": {"content": title}}]},
-        "Classification status": {"status": {"name": classification}},
-    }
-    if link:    props["Лінк"]  = {"url": link}
-    if screen:  props["Скрін"] = {"url": screen}
-    if iso_date: props["Дата_YYYY_MM_DD_inferred"] = {"date": {"start": iso_date}}
-    if status in ("Подія", "Чисто"):
-        props["Статус"] = {"select": {"name": status}}
-
-    resp = requests.post(
-        "https://api.notion.com/v1/pages",
+def fetch_notion_schema(token):
+    resp = requests.get(
+        f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}",
         headers=notion_headers(token),
-        json={"parent": {"database_id": NOTION_DATABASE_ID}, "properties": props},
         timeout=30,
     )
     if resp.status_code != 200:
-        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:300]}")
+        raise RuntimeError(f"Could not read Notion schema → HTTP {resp.status_code}: {resp.text[:300]}")
+    return {name: meta["type"] for name, meta in resp.json()["properties"].items()}
 
 
-def fetch_all_notion_links(token):
-    links  = set()
+def fetch_existing_values(token, prop_name):
+    values = set()
     cursor = None
-
     while True:
         body = {"page_size": 100}
         if cursor:
             body["start_cursor"] = cursor
-
         resp = requests.post(
             f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
             headers=notion_headers(token),
@@ -196,19 +314,42 @@ def fetch_all_notion_links(token):
         )
         resp.raise_for_status()
         data = resp.json()
-
         for page in data["results"]:
-            prop = page["properties"].get("Лінк")
-            if prop and prop.get("url"):
-                links.add(prop["url"])
-
+            v = extract_plain(page["properties"].get(prop_name))
+            if v:
+                values.add(v)
         if data.get("has_more"):
             cursor = data["next_cursor"]
             time.sleep(0.3)
         else:
             break
+    return values
 
-    return links
+
+def extract_plain(pv):
+    if not pv:
+        return None
+    t = pv.get("type")
+    if t == "title":      return "".join(x["plain_text"] for x in pv["title"]) or None
+    if t == "rich_text":  return "".join(x["plain_text"] for x in pv["rich_text"]) or None
+    if t == "url":        return pv.get("url")
+    if t == "email":      return pv.get("email")
+    if t == "select":     return (pv.get("select") or {}).get("name")
+    if t == "status":     return (pv.get("status") or {}).get("name")
+    if t == "number":     return str(pv.get("number")) if pv.get("number") is not None else None
+    if t == "date":       return (pv.get("date") or {}).get("start")
+    return None
+
+
+def create_page(token, props):
+    resp = requests.post(
+        "https://api.notion.com/v1/pages",
+        headers=notion_headers(token),
+        json={"parent": {"database_id": NOTION_DATABASE_ID}, "properties": props},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:300]}")
 
 
 def notion_headers(token):
@@ -227,17 +368,14 @@ def parse_date(raw):
     raw = str(raw).strip()
     if not raw:
         return None
-
     if re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
         return raw
-
     m = re.match(r"^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?", raw)
     if m:
         day   = m.group(1).zfill(2)
         month = m.group(2).zfill(2)
         year  = m.group(3) or str(infer_year(int(m.group(2))))
         return f"{year}-{month}-{day}"
-
     return None
 
 
@@ -252,14 +390,11 @@ def extract_title(link):
     m = re.match(r"^https?://([^/]+)(/.*)?$", link)
     if not m:
         return link[:100]
-
     host  = re.sub(r"^www\.", "", m.group(1))
     path  = (m.group(2) or "").rstrip("/")
     parts = [p for p in path.split("/") if p]
-
     if host == "t.me" and len(parts) >= 2: return f"@{parts[0]} · {parts[1]}"
     if host == "t.me" and len(parts) == 1: return f"@{parts[0]}"
-
     last = parts[-1] if parts else ""
     return f"{host} / {last}" if last else host
 

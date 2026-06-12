@@ -27,3 +27,6 @@ jobs:
           SHEETS_SPREADSHEET_ID:       ${{ secrets.SHEETS_SPREADSHEET_ID }}
           SHEETS_DB_ID:                ${{ secrets.SHEETS_DB_ID }}
           SHEETS_TAB_NAME:             ${{ secrets.SHEETS_TAB_NAME }}
+          SHEETS_SYNCED_COLUMN:        ${{ secrets.SHEETS_SYNCED_COLUMN }}
+          SHEETS_DEDUP_PROPERTY:       ${{ secrets.SHEETS_DEDUP_PROPERTY }}
+          SHEETS_CUSTOM_RULES:         ${{ secrets.SHEETS_CUSTOM_RULES }}
