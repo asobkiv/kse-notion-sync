@@ -164,9 +164,10 @@ def safe_get(row, idx):
 # ── NOTION ────────────────────────────────────────────────────
 
 def create_notion_page(token, title, link, screen, iso_date, status):
+    classification = "Approved" if status == "Чисто" else "Queued"
     props = {
         "What":                  {"title": [{"text": {"content": title}}]},
-        "Classification status": {"status": {"name": "Queued"}},
+        "Classification status": {"status": {"name": classification}},
     }
     if link:    props["Лінк"]  = {"url": link}
     if screen:  props["Скрін"] = {"url": screen}
