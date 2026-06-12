@@ -259,7 +259,7 @@ def load_crisis_topics(token):
         )
         data = resp.json()
         if "results" not in data:
-            log.info("  Crisis Topics unavailable — check integration access")
+            log.info(f"  Crisis Topics API error: {data}")
             break
 
         for page in data["results"]:
