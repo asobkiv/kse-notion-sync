@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 DRIVE_FOLDER_ID     = "19igBYz95z5LJl1dxx51M7RQqzdjiIvTa"
 MOODLE_BASE_URL     = "https://teaching.kse.org.ua"
 NOTION_DB_ID        = "a32758a7dea44e319d1acf59760ad6a6"
-CRISIS_TOPICS_DB_ID = "ca860c20-0776-4862-b19d-ecd1d1370297"
+CRISIS_TOPICS_DB_ID = "9f1bc737a8664853a2e55965a7c30349"
 NOTION_VERSION      = "2022-06-28"
 COURSE_ID_FILTER    = [3261, 3508, 3942, 2688, 3563]  # empty list = all enrolled
 EXT_SLIDES          = {"ppt", "pptx", "key", "odp"}
