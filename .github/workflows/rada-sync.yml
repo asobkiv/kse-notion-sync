@@ -24,3 +24,6 @@ jobs:
         env:
           NOTION_TOKEN:                ${{ secrets.RADA_NOTION_TOKEN }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          NOTION_DB_ID:                ${{ secrets.NOTION_DB_ID }}
+          HONCHARENKO_PAGE_ID:         ${{ secrets.HONCHARENKO_PAGE_ID }}
+          RADA_DRIVE_FOLDER_ID:        ${{ secrets.RADA_DRIVE_FOLDER_ID }}

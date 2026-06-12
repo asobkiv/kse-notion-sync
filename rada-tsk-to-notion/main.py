@@ -5,6 +5,9 @@ Runs via GitHub Actions on a weekly schedule.
 Required env vars (set as GitHub Secrets):
   NOTION_TOKEN                 — Notion integration secret
   GOOGLE_SERVICE_ACCOUNT_JSON  — Google service account JSON (for Drive uploads)
+  NOTION_DB_ID                 — Notion artifacts database ID
+  HONCHARENKO_PAGE_ID          — Notion page ID of the Honcharenko Crisis Topic
+  RADA_DRIVE_FOLDER_ID         — Google Drive folder ID for downloaded PDFs
 """
 
 import io
@@ -24,15 +27,10 @@ log = logging.getLogger(__name__)
 
 # ── CONFIGURE THESE ───────────────────────────────────────────
 
-# Google Drive folder ID for downloaded PDFs
-# Create a folder in Drive → share it with the service account email → paste ID here
-DRIVE_FOLDER_ID = "1pLb2aDzAHAlIH_JPKN51V01tD7jkCH7n"
-
-# Notion artifacts database
-NOTION_DB_ID = "a32758a7dea44e319d1acf59760ad6a6"
-
-# Notion page ID for the Honcharenko Crisis Topic (used for Relation)
-HONCHARENKO_PAGE_ID = "358d1fbd-7688-813e-a700-e4119c3d2709"
+# Loaded from GitHub Secrets at runtime
+DRIVE_FOLDER_ID     = os.environ.get("RADA_DRIVE_FOLDER_ID", "")
+NOTION_DB_ID        = os.environ.get("NOTION_DB_ID", "")
+HONCHARENKO_PAGE_ID = os.environ.get("HONCHARENKO_PAGE_ID", "")
 
 # ── INTERNALS ─────────────────────────────────────────────────
 

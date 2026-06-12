@@ -5,10 +5,8 @@ Runs via GitHub Actions on a daily schedule.
 Required env vars (set as GitHub Secrets):
   NOTION_TOKEN                 — Notion integration secret
   GOOGLE_SERVICE_ACCOUNT_JSON  — Google service account JSON (for Sheets read/write)
-
-Setup:
-  1. Share your Google Sheet with the service account email (Editor access)
-  2. Set SPREADSHEET_ID below
+  SHEETS_SPREADSHEET_ID        — Google Sheets spreadsheet ID
+  SHEETS_DB_ID                 — Notion database ID for media mentions
 """
 
 import json
@@ -26,14 +24,12 @@ log = logging.getLogger(__name__)
 
 # ── CONFIGURE THESE ───────────────────────────────────────────
 
-# Google Sheets spreadsheet ID (from the URL: /spreadsheets/d/THIS_PART/edit)
-SPREADSHEET_ID = "1ysF3g9lPtwGrL1-8HGRl-BV1F7Hl33Iznp5rHhA3mJI"
-
-# Name of the sheet tab (bottom tab name, usually "Sheet1" or "Аркуш1")
+# Name of the sheet tab (bottom tab name)
 SHEET_NAME = "Лист1"
 
-# Notion database for Ukrainian media mentions
-NOTION_DATABASE_ID = "342d1fbd7688805f80a7e70bf32f4762"
+# Loaded from GitHub Secrets at runtime
+SPREADSHEET_ID     = os.environ.get("SHEETS_SPREADSHEET_ID", "")
+NOTION_DATABASE_ID = os.environ.get("SHEETS_DB_ID", "")
 
 # ── INTERNALS ─────────────────────────────────────────────────
 
