@@ -7,8 +7,9 @@ Automated pipelines that pull content from external sources into a Notion databa
 | `moodle-to-notion` | Moodle LMS | daily 09:00 Kyiv | Teaching evidence — slides, docs, YouTube recordings |
 | `rada-tsk-to-notion` | Rada TSK stenographic records | every Monday 10:00 Kyiv | Documents linked to a Crisis Topic |
 | `sheets-to-notion` | Google Sheets | daily 08:00 Kyiv | One Notion page per row (schema-driven) |
+| `drive-inquiries-to-notion` | Google Drive (Requests/Responses folders) | daily 09:00 Kyiv | One page per request file; stub page per response file |
 
-The three scripts are independent — fork all of them or just the one you need.
+The scripts are independent — fork all of them or just the one you need.
 
 ---
 
@@ -81,6 +82,48 @@ Each scraper writes a fixed set of properties. **Create a Notion database with t
 
 This one is **schema-driven** — it adapts to whatever database you point it at. See the next section.
 
+### drive-inquiries-to-notion
+
+Database with these properties (the script writes the title, status, and a file
+property; everything else is meant to be auto-filled by Notion AI):
+
+| Property | Type | Notes |
+|---|---|---|
+| `Request(case)` | Title | **required** — working title (derived from filename) |
+| `Files & media request` | Files | request file uploaded here |
+| `Response files` | Files | response file uploaded here |
+| `Status` | Status | `Received` (requests) / `Triage / qualification` (response stubs) — **add these options** |
+| `Summary`, `Primary topic`, `Requester type`, `Relevance`, `Contact person`, `Organization`, … | any | left for Notion **AI Autofill / Database Agent** to fill from the page content |
+
+Classification here = enabling **AI Autofill** (now "Database Agent") on the
+analytical properties. The script only puts content on the page (docx/pdf text in
+the body, file attached); Notion fills the rest automatically.
+
+---
+
+## How `drive-inquiries-to-notion` works
+
+Watches a parent Drive folder with two subfolders:
+
+- **`Requests/`** → one page per file. File → `Files & media request`, extracted
+  docx/pdf text → page body, `Status = Received`.
+- **`Responses/`** → a response belongs on its request's page, but filename
+  matching is unreliable, so each response becomes a **stub page**: file →
+  `Response files`, `Status = Triage / qualification`, title `⚠️ RESPONSE — link
+  to request: <file>`, plus the extracted text and the **top-3 candidate requests**
+  (ranked by content similarity) as links for one-click manual linking.
+
+**Dedup is by filename** — each run rescans both folders and skips any file whose
+name already appears attached in Notion. No Drive files are moved or modified.
+
+**`INQUIRIES_AUTO_ATTACH=true`** (optional, off by default): on a single confident
+content match, the response file is attached straight to that request's
+`Response files` instead of creating a stub. Keep off until you trust the matching
+on real data. Notion AI agents cannot move file attachments between pages, so the
+scraper is the only reliable way to place the file — hence the stub-by-default.
+
+Use `INQUIRIES_DRY_RUN=true` to preview (`WOULD CREATE` / `WOULD STUB`) with no writes.
+
 ---
 
 ## How `sheets-to-notion` maps columns
@@ -137,6 +180,12 @@ The KSE media-mentions sheet has logic the generic engine can't infer (title gen
 | `SHEETS_CUSTOM_RULES` | sheets | Set to `kse_media` to enable KSE rules; else leave unset |
 | `SHEETS_DRY_RUN` | sheets | Set to `true` to preview without creating anything (no credits) |
 | `SHEETS_MAX_CREATES` | sheets | Cap pages created per run (e.g. `50`; unset = unlimited) |
+| `INQUIRIES_NOTION_TOKEN` | inquiries | Notion integration secret |
+| `INQUIRIES_DB_ID` | inquiries | Requests Dashboard database ID |
+| `INQUIRIES_DRIVE_FOLDER_ID` | inquiries | Parent Drive folder (with `Requests/` + `Responses/` subfolders) |
+| `INQUIRIES_AUTO_ATTACH` | inquiries | `true` to auto-attach confident response matches (default off) |
+| `INQUIRIES_DRY_RUN` | inquiries | `true` to preview without writing anything |
+| `INQUIRIES_MAX_CREATES` | inquiries | Cap pages created per run (0/unset = unlimited) |
 
 **How to find IDs:**
 - Notion database ID → open database → 32-char string in the URL
@@ -155,7 +204,7 @@ The KSE media-mentions sheet has logic the generic engine can't infer (title gen
 
 ## How deduplication works
 
-All three scripts load existing Notion entries before writing. An entry is skipped if it already exists (by name for Moodle/Rada, by the dedup property for Sheets). Safe to run repeatedly.
+All scripts load existing Notion entries before writing. An entry is skipped if it already exists (by name for Moodle/Rada, by the dedup property for Sheets, by attached filename for Inquiries). Safe to run repeatedly.
 
 For `sheets-to-notion`, a row whose **dedup property is empty** (e.g. a row with no link) is skipped entirely — it can't be deduplicated, so creating it would spawn a junk page that reappears on every run. It stays unmarked, so if you fill in the value later it syncs then.
 
