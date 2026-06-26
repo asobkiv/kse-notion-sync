@@ -20,8 +20,9 @@ WHAT IT DOES
                the file is attached straight to that request's "Response files"
                instead of creating a stub. Off by default (no wrong-merge risk).
 
-  Processed files are moved to a Processed/ subfolder so the intake queue stays
-  clean and nothing is synced twice.
+  Dedup is by filename: each run scans both subfolders and skips any file whose
+  name already appears attached in Notion ("Files & media request" for requests,
+  "Response files" for responses). No Drive files are moved or modified.
 
 Required env vars (GitHub Secrets):
   INQUIRIES_NOTION_TOKEN       — Notion integration secret (access to the DB)
@@ -105,22 +106,23 @@ def main():
     if DRY_RUN:
         log.info("DRY RUN — nothing will be created or moved in Notion/Drive")
 
-    existing = load_existing_requests(token, ds_id)
-    log.info(f"{len(existing)} existing request pages loaded")
-    existing_titles = {r['title'].lower() for r in existing if r['title']}
+    existing, req_file_names, resp_file_names = load_existing(token, ds_id)
+    log.info(f"{len(existing)} existing pages | {len(req_file_names)} request file(s), "
+             f"{len(resp_file_names)} response file(s) already in Notion")
 
     created = stubs = attached = skipped = errors = 0
 
     # ── Requests ──────────────────────────────────────────────
     for f in requests_in:
         try:
-            title = clean_title(f["name"])
-            if title.lower() in existing_titles:
+            # Dedup by attached filename — no Drive files are moved
+            if f["name"] in req_file_names:
                 skipped += 1
                 continue
             if hit_cap(created + stubs):
                 break
 
+            title = clean_title(f["name"])
             text = extract_text(drive, f)
             if DRY_RUN:
                 log.info(f"  WOULD CREATE request page: {title}")
@@ -129,8 +131,7 @@ def main():
 
             page_id = create_request_page(token, ds_id, title, text)
             attach_file(token, drive, f, page_id, P_REQUEST_FILES)
-            move_to_processed(drive, f, DRIVE_FOLDER_ID)
-            existing_titles.add(title.lower())
+            req_file_names.add(f["name"])
             created += 1
             log.info(f"  Created request: {title}")
             time.sleep(0.35)
@@ -141,6 +142,9 @@ def main():
     # ── Responses ─────────────────────────────────────────────
     for f in responses_in:
         try:
+            if f["name"] in resp_file_names:
+                skipped += 1
+                continue
             if hit_cap(created + stubs):
                 break
 
@@ -154,7 +158,7 @@ def main():
                     attached += 1
                     continue
                 append_file(token, drive, f, target["id"], P_RESPONSE_FILES)
-                move_to_processed(drive, f, DRIVE_FOLDER_ID)
+                resp_file_names.add(f["name"])
                 attached += 1
                 log.info(f"  Attached response '{f['name']}' → {target['title']}")
                 time.sleep(0.35)
@@ -169,7 +173,7 @@ def main():
 
             page_id = create_response_stub(token, ds_id, f["name"], text, candidates)
             attach_file(token, drive, f, page_id, P_RESPONSE_FILES)
-            move_to_processed(drive, f, DRIVE_FOLDER_ID)
+            resp_file_names.add(f["name"])
             stubs += 1
             log.info(f"  Stub for response: {f['name']}")
             time.sleep(0.35)
@@ -209,18 +213,6 @@ def find_subfolder(drive, parent_id, name):
     return files[0]["id"] if files else None
 
 
-def get_or_create_subfolder(drive, parent_id, name):
-    existing = find_subfolder(drive, parent_id, name)
-    if existing:
-        return existing
-    created = drive.files().create(
-        body={"name": name, "mimeType": "application/vnd.google-apps.folder",
-              "parents": [parent_id]},
-        fields="id",
-    ).execute()
-    return created["id"]
-
-
 def list_files(drive, folder_id):
     items, page = [], None
     while True:
@@ -244,16 +236,6 @@ def download_bytes(drive, file_id):
     while not done:
         _, done = downloader.next_chunk()
     return buf.getvalue()
-
-
-def move_to_processed(drive, f, parent_id):
-    processed = get_or_create_subfolder(drive, parent_id, "Processed")
-    # current parent is the source subfolder
-    meta = drive.files().get(fileId=f["id"], fields="parents").execute()
-    prev = ",".join(meta.get("parents", []))
-    drive.files().update(
-        fileId=f["id"], addParents=processed, removeParents=prev, fields="id",
-    ).execute()
 
 
 # ── TEXT EXTRACTION ───────────────────────────────────────────
@@ -327,8 +309,12 @@ def get_data_source_id(token):
     return sources[0]["id"]
 
 
-def load_existing_requests(token, ds_id):
+def load_existing(token, ds_id):
+    """Return (request profiles, set of request filenames, set of response
+    filenames) already present in Notion — used for candidate matching and for
+    name-based dedup (so no Drive files need to be moved)."""
     out, cursor = [], None
+    req_files, resp_files = set(), set()
     while True:
         body = {"page_size": 100}
         if cursor:
@@ -348,12 +334,18 @@ def load_existing_requests(token, ds_id):
                 "contact": plain_text(props.get(P_CONTACT)),
                 "org":     plain_text(props.get(P_ORG)),
             })
+            req_files.update(file_names(props.get(P_REQUEST_FILES)))
+            resp_files.update(file_names(props.get(P_RESPONSE_FILES)))
         if data.get("has_more"):
             cursor = data["next_cursor"]
             time.sleep(0.3)
         else:
             break
-    return out
+    return out, req_files, resp_files
+
+
+def file_names(prop):
+    return [it.get("name", "") for it in (prop or {}).get("files", []) if it.get("name")]
 
 
 def plain_title(prop):
