@@ -1,0 +1,31 @@
+name: Drive Inquiries → Notion sync
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # щодня о 06:00 UTC = 09:00 Kyiv (UTC+3)
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r drive-inquiries-to-notion/requirements.txt
+
+      - name: Run sync
+        run: python drive-inquiries-to-notion/main.py
+        env:
+          INQUIRIES_NOTION_TOKEN:      ${{ secrets.INQUIRIES_NOTION_TOKEN }}
+          INQUIRIES_DB_ID:             ${{ secrets.INQUIRIES_DB_ID }}
+          INQUIRIES_DRIVE_FOLDER_ID:   ${{ secrets.INQUIRIES_DRIVE_FOLDER_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          INQUIRIES_AUTO_ATTACH:       ${{ secrets.INQUIRIES_AUTO_ATTACH }}
+          INQUIRIES_DRY_RUN:           ${{ secrets.INQUIRIES_DRY_RUN }}
+          INQUIRIES_MAX_CREATES:       ${{ secrets.INQUIRIES_MAX_CREATES }}
