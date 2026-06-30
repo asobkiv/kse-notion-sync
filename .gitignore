@@ -6,6 +6,11 @@
 .env
 *.env.local
 
+# OAuth credentials — NEVER commit these (used locally by get_token.py)
+client_secret*.json
+token.json
+*credentials*.json
+
 # Temporary files
 .tmp/
 *.tmp
