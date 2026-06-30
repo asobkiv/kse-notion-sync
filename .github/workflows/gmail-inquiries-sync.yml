@@ -1,0 +1,32 @@
+name: Gmail Inquiries → Notion sync
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # щодня о 07:00 UTC = 10:00 Kyiv (UTC+3)
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r gmail-inquiries-to-notion/requirements.txt
+
+      - name: Run sync
+        run: python gmail-inquiries-to-notion/main.py
+        env:
+          GMAIL_CLIENT_ID:        ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET:    ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN:    ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          INQUIRIES_NOTION_TOKEN: ${{ secrets.INQUIRIES_NOTION_TOKEN }}
+          INQUIRIES_DB_ID:        ${{ secrets.INQUIRIES_DB_ID }}
+          GMAIL_QUERY:            ${{ secrets.GMAIL_QUERY }}
+          GMAIL_DRY_RUN:          ${{ secrets.GMAIL_DRY_RUN }}
+          GMAIL_MAX_CREATES:      ${{ secrets.GMAIL_MAX_CREATES }}
