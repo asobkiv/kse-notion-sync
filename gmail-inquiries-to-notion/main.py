@@ -143,7 +143,7 @@ def list_message_ids(gmail, query):
     ids, page = [], None
     while True:
         r = gmail.users().messages().list(
-            userId="me", q=query, pageSize=100, pageToken=page).execute()
+            userId="me", q=query, maxResults=100, pageToken=page).execute()
         ids.extend(m["id"] for m in r.get("messages", []))
         page = r.get("nextPageToken")
         if not page:
