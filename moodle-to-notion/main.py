@@ -192,7 +192,22 @@ def extract_sesskey(html):
 
 # ── MOODLE API ────────────────────────────────────────────────
 
+MOODLE_MAX_RETRIES = 3
+MOODLE_RETRY_BACKOFF = 5  # seconds; doubles each retry
+
 def call_moodle_api(auth, wsfunction, params):
+    for attempt in range(1, MOODLE_MAX_RETRIES + 1):
+        try:
+            return _call_moodle_api_once(auth, wsfunction, params)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            if attempt == MOODLE_MAX_RETRIES:
+                raise
+            wait = MOODLE_RETRY_BACKOFF * (2 ** (attempt - 1))
+            log.info(f"  {wsfunction} failed ({e}), retrying in {wait}s (attempt {attempt}/{MOODLE_MAX_RETRIES})")
+            time.sleep(wait)
+
+
+def _call_moodle_api_once(auth, wsfunction, params):
     if auth["type"] == "token":
         resp = requests.post(
             f"{MOODLE_BASE_URL}/webservice/rest/server.php",
