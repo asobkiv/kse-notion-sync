@@ -1,0 +1,43 @@
+name: Konotopskyi sheets → Notion (one-off)
+
+# One-off replication of the «Публикации по Конотопскому Июнь-Июль 2026» sheet
+# into the "Konotopskyi / Ajax case — articles" Notion database.
+# Manual dispatch only — the daily sheets-sync job is untouched.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true = preview only, create nothing"
+        required: false
+        default: "true"
+      max_creates:
+        description: "Cap pages created per run (empty = unlimited)"
+        required: false
+        default: ""
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r sheets-to-notion/requirements.txt
+
+      - name: Run sync
+        run: python sheets-to-notion/main.py
+        env:
+          NOTION_TOKEN:                ${{ secrets.SHEETS_NOTION_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SHEETS_SPREADSHEET_ID:       ${{ secrets.KONOTOPSKYI_SPREADSHEET_ID }}
+          SHEETS_DB_ID:                ${{ secrets.KONOTOPSKYI_DB_ID }}
+          SHEETS_TAB_NAME:             "Лист"
+          # generic mode: no SHEETS_CUSTOM_RULES, dedup by the title property (Ссылка)
+          SHEETS_DRY_RUN:              ${{ inputs.dry_run == 'true' && 'true' || '' }}
+          SHEETS_MAX_CREATES:          ${{ inputs.max_creates }}
