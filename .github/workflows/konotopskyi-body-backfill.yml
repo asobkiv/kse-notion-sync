@@ -1,0 +1,39 @@
+name: Konotopskyi body backfill (one-off)
+
+# Writes the full «Текст» column from the Konotopskyi sheet into the BODY of
+# each page in the articles database (the property version was capped at
+# 2000 chars). Idempotent: pages that already have content are skipped.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true = preview only, write nothing"
+        required: false
+        default: "true"
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r sheets-to-notion/requirements.txt
+
+      - name: Run backfill
+        run: python sheets-to-notion/body_backfill.py
+        env:
+          NOTION_TOKEN:                ${{ secrets.SHEETS_NOTION_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SHEETS_SPREADSHEET_ID:       ${{ secrets.KONOTOPSKYI_SPREADSHEET_ID }}
+          SHEETS_DB_ID:                ${{ secrets.KONOTOPSKYI_DB_ID }}
+          SHEETS_TAB_NAME:             "Лист"
+          BODY_KEY_COLUMN:             "Ссылка"
+          BODY_COLUMN:                 "Текст"
+          BODY_DRY_RUN:                ${{ inputs.dry_run == 'true' && 'true' || '' }}
