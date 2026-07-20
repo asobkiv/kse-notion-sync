@@ -184,13 +184,27 @@ def main():
 
 # ── NOTION VALUE FORMATTING (generic) ─────────────────────────
 
+def clip(val, limit=2000):
+    """Truncate to a Notion length limit. Notion counts UTF-16 code units,
+    not Python characters — emoji count as 2 — so a plain val[:2000] can
+    still be rejected with "length should be ≤ 2000"."""
+    enc = val.encode("utf-16-le")[: limit * 2]
+    return enc.decode("utf-16-le", errors="ignore")
+
+
+def option_name(val):
+    """Sanitize a select/status option name: Notion forbids commas in option
+    names, and stray newlines in sheet cells produce unusable options."""
+    return re.sub(r"\s+", " ", val).replace(",", "‚").strip()[:100]
+
+
 def format_value(ptype, val):
     """Format a plain string into a Notion property payload for the given type.
     Returns None for empty/unsupported values."""
     if ptype == "title":
-        return {"title": [{"text": {"content": val[:2000]}}]}
+        return {"title": [{"text": {"content": clip(val)}}]}
     if ptype == "rich_text":
-        return {"rich_text": [{"text": {"content": val[:2000]}}]}
+        return {"rich_text": [{"text": {"content": clip(val)}}]}
     if ptype == "url":
         return {"url": val}
     if ptype == "email":
@@ -205,11 +219,11 @@ def format_value(ptype, val):
     if ptype == "checkbox":
         return {"checkbox": val.strip().lower() in ("true", "1", "yes", "так", "x", "✓")}
     if ptype == "select":
-        return {"select": {"name": val[:100]}}
+        return {"select": {"name": option_name(val)}}
     if ptype == "status":
-        return {"status": {"name": val[:100]}}
+        return {"status": {"name": option_name(val)}}
     if ptype == "multi_select":
-        parts = [p.strip()[:100] for p in val.split(",") if p.strip()]
+        parts = [option_name(p) for p in val.split(",") if p.strip()]
         return {"multi_select": [{"name": p} for p in parts]} if parts else None
     if ptype == "date":
         d = parse_date(val)
@@ -299,6 +313,9 @@ def read_sheet(sheets):
 
 
 def update_cell(sheets, row, col, value):
+    # Sheets API caps write requests at 60/min per user; a large backlog of
+    # per-row write-backs blows through that and 429s without this throttle.
+    time.sleep(1.1)
     sheets.spreadsheets().values().update(
         spreadsheetId=SPREADSHEET_ID,
         range=f"{SHEET_NAME}!{col_to_letter(col)}{row}",

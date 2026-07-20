@@ -132,11 +132,11 @@ The script reads your Notion database schema, then for each **sheet column** it 
 
 | Notion property type | Expected sheet cell |
 |---|---|
-| Title / Text | any text |
+| Title / Text | any text (truncated to Notion's 2000-unit limit, counted in UTF-16 — emoji count double) |
 | URL / Email / Phone | the raw value |
 | Number | `123` or `12,5` |
 | Checkbox | `true` / `1` / `yes` / `так` / `x` |
-| Select / Status | the option name (Select auto-creates; Status must pre-exist) |
+| Select / Status | the option name (Select auto-creates; Status must pre-exist). Commas are replaced with `‚` and whitespace collapsed — Notion forbids commas in option names |
 | Multi-select | comma-separated, e.g. `Evidence, Timeline` |
 | Date | `2026-05-15` or `15.05.2026` |
 
