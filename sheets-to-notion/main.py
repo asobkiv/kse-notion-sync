@@ -25,6 +25,9 @@ Optional env vars:
   SHEETS_SYNCED_COLUMN — tracking column name (default "Notion Synced")
   SHEETS_DEDUP_PROPERTY — Notion property used to detect duplicates
                           (default: the database's title property)
+  SHEETS_COLUMN_MAP    — rename sheet columns before matching, when headers
+                          and Notion properties differ. Comma-separated pairs:
+                          "SheetHeader=NotionProperty,Another=Other"
   SHEETS_CUSTOM_RULES  — enables a project-specific rules block; leave unset
                           for generic behavior (see CUSTOM RULES section below)
 """
@@ -50,6 +53,13 @@ SHEET_NAME         = os.environ.get("SHEETS_TAB_NAME") or "Sheet1"
 SYNCED_COLUMN      = os.environ.get("SHEETS_SYNCED_COLUMN") or "Notion Synced"
 DEDUP_PROPERTY     = os.environ.get("SHEETS_DEDUP_PROPERTY", "")  # "" = title prop
 CUSTOM_RULES       = os.environ.get("SHEETS_CUSTOM_RULES", "")    # "" = generic
+
+# Optional sheet-header → Notion-property renames ("Ссылка=Лінк,Время=Час")
+COLUMN_MAP = {}
+for _pair in (os.environ.get("SHEETS_COLUMN_MAP") or "").split(","):
+    if "=" in _pair:
+        _src, _dst = _pair.split("=", 1)
+        COLUMN_MAP[_src.strip().lower()] = _dst.strip()
 
 # Safety: when set (any non-empty value), the script only LOGS what it would
 # create — it creates nothing in Notion, so no classification credits are spent.
@@ -93,6 +103,7 @@ def main():
         if hn.lower() == SYNCED_COLUMN.lower():
             synced_idx = i
             continue
+        hn = COLUMN_MAP.get(hn.lower(), hn)
         prop = name_to_prop.get(hn.lower())
         if prop:
             col_map[i] = (prop, schema[prop])

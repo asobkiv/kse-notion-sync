@@ -1,16 +1,21 @@
-name: Konotopskyi sheets → Notion (one-off)
+name: Konotopskyi sheets → Notion sync
 
-# One-off replication of the «Публикации по Конотопскому Июнь-Июль 2026» sheet
-# into the "Konotopskyi / Ajax case — articles" Notion database.
-# Manual dispatch only — the daily sheets-sync job is untouched.
+# Syncs the «Публикации по Конотопскому Июнь-Июль 2026» sheet into the
+# "Konotopskyi / Ajax case — articles" Notion database:
+#   1. main.py         — one page per new row; Russian sheet headers are mapped
+#                        to the Ukrainian Notion properties via SHEETS_COLUMN_MAP
+#   2. body_backfill.py — full «Текст» goes into each page's BODY (no 2000-char
+#                        property cap); idempotent, only fills empty pages
 
 on:
+  schedule:
+    - cron: "30 5 * * *"   # щодня о 05:30 UTC = 08:30 Kyiv (UTC+3)
   workflow_dispatch:
     inputs:
       dry_run:
         description: "true = preview only, create nothing"
         required: false
-        default: "true"
+        default: "false"
       max_creates:
         description: "Cap pages created per run (empty = unlimited)"
         required: false
@@ -30,7 +35,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r sheets-to-notion/requirements.txt
 
-      - name: Run sync
+      - name: Sync rows
         run: python sheets-to-notion/main.py
         env:
           NOTION_TOKEN:                ${{ secrets.SHEETS_NOTION_TOKEN }}
@@ -38,6 +43,20 @@ jobs:
           SHEETS_SPREADSHEET_ID:       ${{ secrets.KONOTOPSKYI_SPREADSHEET_ID }}
           SHEETS_DB_ID:                ${{ secrets.KONOTOPSKYI_DB_ID }}
           SHEETS_TAB_NAME:             "Лист"
-          # generic mode: no SHEETS_CUSTOM_RULES, dedup by the title property (Ссылка)
+          SHEETS_COLUMN_MAP:           "Ссылка=Лінк,Источник=Джерело,Время=Час,Перевод=Переклад"
+          # dedup by the title property (Лінк); «Текст» has no matching
+          # property on purpose — body_backfill puts it inside the page
           SHEETS_DRY_RUN:              ${{ inputs.dry_run == 'true' && 'true' || '' }}
           SHEETS_MAX_CREATES:          ${{ inputs.max_creates }}
+
+      - name: Backfill bodies
+        run: python sheets-to-notion/body_backfill.py
+        env:
+          NOTION_TOKEN:                ${{ secrets.SHEETS_NOTION_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SHEETS_SPREADSHEET_ID:       ${{ secrets.KONOTOPSKYI_SPREADSHEET_ID }}
+          SHEETS_DB_ID:                ${{ secrets.KONOTOPSKYI_DB_ID }}
+          SHEETS_TAB_NAME:             "Лист"
+          BODY_KEY_COLUMN:             "Ссылка"
+          BODY_COLUMN:                 "Текст"
+          BODY_DRY_RUN:                ${{ inputs.dry_run == 'true' && 'true' || '' }}

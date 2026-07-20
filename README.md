@@ -144,6 +144,7 @@ The script reads your Notion database schema, then for each **sheet column** it 
 - Name your sheet columns exactly like your Notion properties → they map automatically.
 - Columns with no matching property are ignored.
 - Duplicates are detected via the title property (override with `SHEETS_DEDUP_PROPERTY`).
+- If sheet headers and Notion property names differ (e.g. different languages), map them with `SHEETS_COLUMN_MAP`, e.g. `Ссылка=Лінк,Время=Час`.
 - A `Notion Synced` column is added to the sheet to track progress; synced rows are skipped on re-runs.
 
 **Recommendation for a clean setup:** create a Notion database where the property names match your sheet headers 1:1. Make one of them the Title, and pick a column with unique values for dedup.
@@ -177,6 +178,7 @@ The KSE media-mentions sheet has logic the generic engine can't infer (title gen
 | `SHEETS_TAB_NAME` | sheets | Sheet tab name (default `Sheet1`) |
 | `SHEETS_SYNCED_COLUMN` | sheets | Tracking column name (default `Notion Synced`) |
 | `SHEETS_DEDUP_PROPERTY` | sheets | Dedup property (default: the title property) |
+| `SHEETS_COLUMN_MAP` | sheets | Optional sheet-header → property renames, `A=B,C=D` |
 | `SHEETS_CUSTOM_RULES` | sheets | Set to `kse_media` to enable KSE rules; else leave unset |
 | `SHEETS_DRY_RUN` | sheets | Set to `true` to preview without creating anything (no credits) |
 | `SHEETS_MAX_CREATES` | sheets | Cap pages created per run (e.g. `50`; unset = unlimited) |
