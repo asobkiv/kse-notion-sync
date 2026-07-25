@@ -44,6 +44,9 @@ NOTION_VERSION = "2022-06-28"
 # Notion caps rich_text content at 2000 UTF-16 code units; stay under it.
 CHUNK_LIMIT = 1900
 
+# Retry transient Google 5xx/429 responses instead of failing the run.
+SHEETS_API_RETRIES = 5
+
 
 def main():
     token   = os.environ["NOTION_TOKEN"]
@@ -99,7 +102,7 @@ def read_bodies(sa_json_str):
     sheets = build("sheets", "v4", credentials=creds, cache_discovery=False)
     values = sheets.spreadsheets().values().get(
         spreadsheetId=SPREADSHEET_ID, range=SHEET_NAME,
-    ).execute().get("values", [])
+    ).execute(num_retries=SHEETS_API_RETRIES).get("values", [])
     if not values:
         return {}
     headers = [str(h).strip() for h in values[0]]

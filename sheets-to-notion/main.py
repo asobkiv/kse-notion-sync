@@ -71,6 +71,11 @@ MAX_CREATES        = int(_max) if _max.strip().isdigit() else 0
 
 NOTION_VERSION = "2022-06-28"
 
+# Google's backend occasionally returns a transient 503 ("The service is
+# currently unavailable"). Without retries a single blip aborts the whole
+# daily run, so let the client retry 5xx/429 with exponential backoff.
+SHEETS_API_RETRIES = 5
+
 # ── MAIN ──────────────────────────────────────────────────────
 
 def main():
@@ -315,7 +320,7 @@ def read_sheet(sheets):
     result = sheets.spreadsheets().values().get(
         spreadsheetId=SPREADSHEET_ID,
         range=SHEET_NAME,
-    ).execute()
+    ).execute(num_retries=SHEETS_API_RETRIES)
     values = result.get("values", [])
     if not values:
         return [], []
@@ -332,7 +337,7 @@ def update_cell(sheets, row, col, value):
         range=f"{SHEET_NAME}!{col_to_letter(col)}{row}",
         valueInputOption="RAW",
         body={"values": [[value]]},
-    ).execute()
+    ).execute(num_retries=SHEETS_API_RETRIES)
 
 
 def col_to_letter(col):
