@@ -99,7 +99,7 @@ def read_bodies(sa_json_str):
     sheets = build("sheets", "v4", credentials=creds, cache_discovery=False)
     values = sheets.spreadsheets().values().get(
         spreadsheetId=SPREADSHEET_ID, range=SHEET_NAME,
-    ).execute().get("values", [])
+    ).execute(num_retries=5).get("values", [])
     if not values:
         return {}
     headers = [str(h).strip() for h in values[0]]

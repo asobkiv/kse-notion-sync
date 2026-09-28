@@ -9,7 +9,7 @@ name: Konotopskyi sheets → Notion sync
 
 on:
   schedule:
-    - cron: "30 5 * * *"   # щодня о 05:30 UTC = 08:30 Kyiv (UTC+3)
+    - cron: "37 5 * * *"   # щодня о 05:37 UTC = 08:37 Kyiv (UTC+3)
   workflow_dispatch:
     inputs:
       dry_run:
@@ -21,14 +21,18 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: read
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 

@@ -1,0 +1,38 @@
+name: Keepalive
+
+# GitHub auto-disables scheduled workflows after 60 days without repository
+# activity (commits). This repo rarely changes, so every sync got switched off
+# with status "disabled_inactivity". Re-enabling each workflow through the API
+# counts as activity and resets the 60-day timer — no dummy commits needed.
+# This workflow re-enables itself too, so it keeps itself alive.
+
+on:
+  schedule:
+    - cron: "41 8 1,15 * *"   # 1-го і 15-го числа о 08:41 UTC
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Re-enable all workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api "repos/$REPO/actions/workflows" --paginate \
+            -q '.workflows[] | [.id, .state, .name] | @tsv' |
+          while IFS=$'\t' read -r id state name; do
+            # respect workflows someone switched off on purpose
+            if [ "$state" = "disabled_manually" ]; then
+              echo "$name: disabled manually — leaving as is"
+              continue
+            fi
+            echo "$name: $state → enabling"
+            gh api -X PUT "repos/$REPO/actions/workflows/$id/enable"
+          done

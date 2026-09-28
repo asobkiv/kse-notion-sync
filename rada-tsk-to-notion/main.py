@@ -186,7 +186,7 @@ def find_file_in_drive(drive_service, filename):
         q=f"name='{escaped}' and '{DRIVE_FOLDER_ID}' in parents and trashed=false",
         fields="files(id)",
         pageSize=1,
-    ).execute()
+    ).execute(num_retries=5)
     files = results.get("files", [])
     return f"https://drive.google.com/file/d/{files[0]['id']}/view" if files else None
 
@@ -214,7 +214,7 @@ def upload_file_to_drive(drive_service, file_url, filename):
         drive_service.permissions().create(
             fileId=file_id,
             body={"type": "anyone", "role": "reader"},
-        ).execute()
+        ).execute(num_retries=5)
 
         log.info(f"  Drive: uploaded — {filename}")
         return f"https://drive.google.com/file/d/{file_id}/view"

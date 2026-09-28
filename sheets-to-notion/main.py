@@ -315,7 +315,7 @@ def read_sheet(sheets):
     result = sheets.spreadsheets().values().get(
         spreadsheetId=SPREADSHEET_ID,
         range=SHEET_NAME,
-    ).execute()
+    ).execute(num_retries=5)
     values = result.get("values", [])
     if not values:
         return [], []
@@ -332,7 +332,7 @@ def update_cell(sheets, row, col, value):
         range=f"{SHEET_NAME}!{col_to_letter(col)}{row}",
         valueInputOption="RAW",
         body={"values": [[value]]},
-    ).execute()
+    ).execute(num_retries=5)
 
 
 def col_to_letter(col):

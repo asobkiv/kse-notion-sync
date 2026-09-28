@@ -95,7 +95,7 @@ def main():
                 log.info(f"Hit GMAIL_MAX_CREATES={MAX_CREATES} — stopping. Re-run to continue.")
                 break
 
-            msg = gmail.users().messages().get(userId="me", id=mid, format="full").execute()
+            msg = gmail.users().messages().get(userId="me", id=mid, format="full").execute(num_retries=5)
             payload = msg.get("payload", {})
             subject = header(payload, "Subject") or "(no subject)"
             contact, _email, org = parse_from(header(payload, "From"))
@@ -143,7 +143,7 @@ def list_message_ids(gmail, query):
     ids, page = [], None
     while True:
         r = gmail.users().messages().list(
-            userId="me", q=query, maxResults=100, pageToken=page).execute()
+            userId="me", q=query, maxResults=100, pageToken=page).execute(num_retries=5)
         ids.extend(m["id"] for m in r.get("messages", []))
         page = r.get("nextPageToken")
         if not page:
@@ -207,7 +207,7 @@ def extract_attachments(gmail, mid, payload):
         body = part.get("body", {})
         if fn and body.get("attachmentId"):
             att = gmail.users().messages().attachments().get(
-                userId="me", messageId=mid, id=body["attachmentId"]).execute()
+                userId="me", messageId=mid, id=body["attachmentId"]).execute(num_retries=5)
             out.append({"name": fn,
                         "mime": part.get("mimeType", "application/octet-stream"),
                         "data": _b64(att["data"])})

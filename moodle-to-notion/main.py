@@ -162,7 +162,18 @@ def moodle_auth(username, password):
         log.info(f"Mobile token not available ({data.get('error', 'unknown')}), falling back to session")
     except Exception as e:
         log.info(f"Token attempt failed: {e}")
-    return session_login(username, password)
+
+    # A non-JSON token response means Moodle served an HTML error/maintenance
+    # page; the session login then fails the same way, so retry with backoff.
+    for attempt in range(1, MOODLE_MAX_RETRIES + 1):
+        try:
+            return session_login(username, password)
+        except (RuntimeError, requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            if attempt == MOODLE_MAX_RETRIES:
+                raise
+            wait = MOODLE_RETRY_BACKOFF * 6 * (2 ** (attempt - 1))
+            log.info(f"Session login failed ({e}), retrying in {wait}s (attempt {attempt}/{MOODLE_MAX_RETRIES})")
+            time.sleep(wait)
 
 
 def session_login(username, password):
@@ -474,7 +485,7 @@ def find_file_in_drive(drive_service, filename):
         q=f"name='{escaped}' and '{DRIVE_FOLDER_ID}' in parents and trashed=false",
         fields="files(id)",
         pageSize=1,
-    ).execute()
+    ).execute(num_retries=5)
     files = results.get("files", [])
     return f"https://drive.google.com/file/d/{files[0]['id']}/view" if files else None
 
@@ -502,7 +513,7 @@ def upload_file_to_drive(drive_service, file_url, filename):
         drive_service.permissions().create(
             fileId=file_id,
             body={"type": "anyone", "role": "reader"},
-        ).execute()
+        ).execute(num_retries=5)
 
         log.info(f"  Drive: uploaded — {filename}")
         return f"https://drive.google.com/file/d/{file_id}/view"

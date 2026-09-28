@@ -208,7 +208,7 @@ def find_subfolder(drive, parent_id, name):
         q=(f"name='{safe}' and '{parent_id}' in parents and trashed=false "
            f"and mimeType='application/vnd.google-apps.folder'"),
         fields="files(id)", pageSize=1,
-    ).execute()
+    ).execute(num_retries=5)
     files = res.get("files", [])
     return files[0]["id"] if files else None
 
@@ -221,7 +221,7 @@ def list_files(drive, folder_id):
               f"and mimeType != 'application/vnd.google-apps.folder'",
             fields="nextPageToken, files(id, name, mimeType)",
             pageSize=100, pageToken=page,
-        ).execute()
+        ).execute(num_retries=5)
         items.extend(res.get("files", []))
         page = res.get("nextPageToken")
         if not page:
